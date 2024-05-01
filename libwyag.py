@@ -81,7 +81,7 @@ def repo_dir(repo, *path, mkdir=False):
   path = repo_path(repo, *path)
 
   if os.path.exists(path):
-    if (os.dir.path(path)): 
+    if (os.path.isdir(path)): 
       return path
     else:
       raise Exception("Not a directory path %s" %path)
@@ -95,7 +95,7 @@ def repo_dir(repo, *path, mkdir=False):
 def repo_create(path):
   """Create a new repository at path"""
 
-  repo = GitRepository(path, true)
+  repo = GitRepository(path,  True)
 
   #First, we make sure that the path does not exist or is an empty dir
 
@@ -134,3 +134,13 @@ def repo_default_config():
 
   return ret
 
+argsp = argsubparsers.add_parser("init", help="Initialize a new, empty repository.")
+
+argsp.add_argument("path",
+                    metavar="directory",
+                    nargs="?",
+                    default=".",
+                    help="where to create this repository.")
+
+def cmd_init(args):
+  repo_create(args.path)
