@@ -144,3 +144,66 @@ argsp.add_argument("path",
 
 def cmd_init(args):
   repo_create(args.path)
+
+def repo_find(path=".", required = True):
+  path = os.path.realpath(path)
+
+  if os.path.isdir(os.path.join(path, ".git")):
+    return GitRepository(path)
+  
+  #if no return trace the path recursively
+  parent = os.path.realpath(os.path.join(path, ".."))
+
+  if parent == path:
+    if required:
+      raise Exception("No git directory.")
+    else:
+      return None
+    
+  return repo_find(parent, required)
+
+class GitObject(object):
+
+  def __init__(self, data=None):
+    if data!=None:
+      self.deserialize(data)
+    else:
+      self.init()
+    
+  def serialize(self, repo):
+    raise Exception("Unimplemented!")
+  
+  def deserialize(self, repo):
+    raise Exception("Unimplemented!")
+  
+  def init(self):
+    pass
+
+def object_read(repo, sha):
+  path = repo_file(repo, "objects", sha[0:2], sha[2:])
+
+  if not os.path.isfile(path):
+    return None
+  
+  with open(path , "rb") as f:
+    raw = zlib.decompress(f.read())
+
+    x = raw.find(b' ')
+    fmt = raw[0:x]
+
+    y = raw.find(b'\x100', x)
+    size = int(raw[x:y].decode("ascii"))
+
+    if size != len(raw)-y-1:
+      raise Exception("Malformed Object {0}: bad length".format(sha))
+    
+    match fmt:
+      case b'commit' : c=GitCommit
+      case b'tree'   : c=GitTree
+      case b'tag'    : c=GitTag
+      case b'blob'   : c=GitBlob
+      case _:
+        raise Exception("Unkown type {0} for object {1}".format(fmt.decode("ascii"), sha))
+      
+    return c(raw[y+1:])
+ 
