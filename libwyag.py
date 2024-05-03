@@ -1,3 +1,4 @@
+# import all necessary libraries
 import argparse
 import collections
 import configparser
@@ -11,11 +12,14 @@ import re
 import sys
 import zlib
 
+# define a parser to get the argument from command line
 argparser = argparse.ArgumentParser(description="Stupid content tracker")
 
+#set subparsers for the commands 
 argsubparsers = argparser.add_subparsers(title="Commands", dest="command")
 argsubparsers.required = True
 
+# add the command line commands for the git tracker
 def main(argv = sys.argv[1:]):
   args = argparser.parse_args(argv)
   match args.command:
@@ -35,60 +39,66 @@ def main(argv = sys.argv[1:]):
     case "tag"                 :cmd_tag(args)
     case _                     :print("Bad command.")
 
+# making the repo object
 class GitRepository(object):
   """A Git Repository"""
 
-  worktree = None
-  gitdir = None
-  conf = None
+  worktree = None # path to the repo
+  gitdir = None   # path to the .git directory
+  conf = None     # config file
 
+  # constructor for this class
   def __init__(self, path, force=False):
-    self.worktree = path
-    self.gitdir = os.path.join(path, ".git")
+    self.worktree = path                         # set the path to repo
+    self.gitdir = os.path.join(path, ".git")     # set the path to .git repo
 
-    if not (force or os.path.isdir(self.gitdir)):
-      raise Exception("Not a Git repository %s" %path)
+    if not (force or os.path.isdir(self.gitdir)):   # checks if the git directory is present or force is set to true
+      raise Exception("Not a Git repository %s" %path) # git directory not found
     
-    #Read configuration file in .git/config
-    self.conf = configparser.ConfigParser()
-    cf = repo_file(self, "config")
+    #read configuration file in .git/config
+    self.conf = configparser.ConfigParser() # create the config
+    cf = repo_file(self, "config") # construct the path to the object
 
+    # check if the config file is present
     if cf and os.path.exists(cf):
       self.conf.read([cf])
     elif not force:
-      raise Exception("Config file missing")
+      raise Exception("Config file missing") # if not then raise exception
     
+    # check if the repo is forced or not
     if not force:
-      vers = int(self.conf.get("core", "repositoryformatversion"))
+      vers = int(self.conf.get("core", "repositoryformatversion")) # gets the version fo the repo from the core part of the config
       if vers != 0:
         raise Exception("Unsupported repository version %s" %vers)
       
 def repo_path(repo, *path):
-  """Compute path under repo's gitdir"""
+  # returns a path by joining the gitdir with the path given as parameter 
   return os.path.join(repo.gitdir, *path)
 
 def repo_file(repo, *path, mkdir=False):
-  """Same as repo_path, but create dirname(*path) if absent, For example,
-  repo_file(r, \"refs\", \"remotes\", \"origin\". \"HEAD"\) will create
-  .git/ref/remotes/origin."""
-
+  # create the directory with the path if it does not exist and return the path
+  # exclude the last part as we do not need the name of the file we just need the path
+  # hence use [:-1]
   if repo_dir(repo, *path[:-1], mkdir=mkdir):
     return repo_path(repo, *path)
   
 def repo_dir(repo, *path, mkdir=False):
-  """Same as repo_path, but mkdir *path if absent if mkdir."""
+  # computes the path and checks if the path exists or not and optionally makes the directory
 
+  # saves the path
   path = repo_path(repo, *path)
 
+  # checks if the path exists or not
   if os.path.exists(path):
     if (os.path.isdir(path)): 
       return path
     else:
       raise Exception("Not a directory path %s" %path)
     
+  # if the path does not exist and mkdir is set to true then make the directory
   if mkdir:
     os.makedirs(path)
-    return path
+    return path   # return the path to the newly created directory
   else: 
     return None
 
