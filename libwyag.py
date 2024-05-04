@@ -102,111 +102,146 @@ def repo_dir(repo, *path, mkdir=False):
   else: 
     return None
 
+# creating the repo
 def repo_create(path):
-  """Create a new repository at path"""
 
   repo = GitRepository(path,  True)
 
-  #First, we make sure that the path does not exist or is an empty dir
+  # first, we make sure that the path does not exist or is an empty dir
 
+  # if the path exists and is not a directory then raise an exception
   if os.path.exists(repo.worktree):
     if not os.path.isdir(repo.worktree):
       raise Exception ("%s is not a directory! "%path)
+    # if the gitdir exists and is not empty then raise an exception
     if os.path.exists(repo.gitdir) and os.listdir(repo.gitdir):
       raise Exception ("%s is not empty!" %path)
 
+  # if the path does not exist then create the directory
   else:
     os.makedirs(repo.worktree)
 
+  # calls the repodir function and creates the required directories for branches, objects, refs, tags, heads
   assert repo_dir(repo, "branches", mkdir=True)
   assert repo_dir(repo, "objects", mkdir=True)
   assert repo_dir(repo, "refs", "tags", mkdir=True)
   assert repo_dir(repo, "refs", "heads", mkdir=True)
 
   # .git/description
+  # opens the head file as f and writes the description to it
   with open(repo_file(repo, "HEAD"), "w") as f:
     f.write("Unnamed repository: edit this file 'description' to change the name the repository.\n")
 
+  # opens the config file and writes the default configuration to it
   with open(repo_file(repo, "config"), "w") as f:
     config = repo_default_config()
     config.write(f)
 
   return repo
 
-# creating the repo file
+# creating the repo configuration
 def repo_default_config():
+  # set the default configuration for the repository
   ret = configparser.ConfigParser()
 
+  # add a core section to the config
   ret.add_section("core")
+  # add repo version set to 0
   ret.set("core", "repositoryformatversion", "0")
+  # add repo filemode set to false to show no changes have taken place yet
   ret.set("core", "filemode", "false")
+  # add repo bare to show that the repo is not bare
   ret.set("core", "bare", "false")
 
   return ret
 
+# define the init command for the git tracker
 argsp = argsubparsers.add_parser("init", help="Initialize a new, empty repository.")
 
+# add arguments to the init command: path, directory, no args, default case, help message
 argsp.add_argument("path",
                     metavar="directory",
                     nargs="?",
                     default=".",
                     help="where to create this repository.")
 
+# create the repo according to the path given by default it is set to the current directory
+# gets called when the init command is called
 def cmd_init(args):
   repo_create(args.path)
 
+# recursive function to find the path to the git directory
 def repo_find(path=".", required = True):
+  # convert the path to the absolute path
   path = os.path.realpath(path)
 
+  # check if the path has a git dir if yes then return the new instance of git repo
   if os.path.isdir(os.path.join(path, ".git")):
     return GitRepository(path)
   
-  #if no return trace the path recursively
+  #go up to the parent directory
   parent = os.path.realpath(os.path.join(path, ".."))
 
+  # if the parent is the same as the path then check if the git directory is required or not
   if parent == path:
     if required:
       raise Exception("No git directory.")
     else:
       return None
     
+  # recursive call to find the git dir
   return repo_find(parent, required)
 
+# git object
 class GitObject(object):
-
+  # constructor for the git object
   def __init__(self, data=None):
+    # if data is not none then deserialize the data else init the object
     if data!=None:
       self.deserialize(data)
     else:
       self.init()
     
+  # serialize the object
   def serialize(self, repo):
     raise Exception("Unimplemented!")
   
+  # deserialize the object
   def deserialize(self, repo):
     raise Exception("Unimplemented!")
   
+  # default pass
   def init(self):
     pass
 
+# function to read the repo and ist SHA1 hash
 def object_read(repo, sha):
+  # get the path to the object first two bits of the sha hash denote the directory and rest denote the file
   path = repo_file(repo, "objects", sha[0:2], sha[2:])
 
+  # check if the file exists or not
   if not os.path.isfile(path):
     return None
   
+  # open the file in read binary mode and decompress the file
   with open(path , "rb") as f:
     raw = zlib.decompress(f.read())
 
+    # find the first space in the file  
     x = raw.find(b' ')
+    # get the object type 
     fmt = raw[0:x]
 
+    # find the null byte
     y = raw.find(b'\x100', x)
+    # get the size of the object by decoding the ascii value
     size = int(raw[x:y].decode("ascii"))
 
+    # check if the size is equal to the length of the raw file
     if size != len(raw)-y-1:
       raise Exception("Malformed Object {0}: bad length".format(sha))
     
+    # match the object type
     match fmt:
       case b'commit' : c=GitCommit
       case b'tree'   : c=GitTree
@@ -214,36 +249,51 @@ def object_read(repo, sha):
       case b'blob'   : c=GitBlob
       case _:
         raise Exception("Unkown type {0} for object {1}".format(fmt.decode("ascii"), sha))
-      
+    
+    # return the required git object initialized with the data except the header
     return c(raw[y+1:])
   
+# function for writing the object to the repo
 def object_write(obj, repo=None):
-  data = obj.seriitalize
+  data = obj.serialize
 
+  # construct the header for the object with its object type, space, length of the data as a string, null byte, and data 
   result = obj.fmt + b' ' + str(len(data)).encode()+ b'\x00' + data
 
+  # compute the sha1 hash of the result into hexadecimal
   sha = hashlib.sha1(result).hexdigest()
 
+  # if repo is provided then write the object to the repo
   if repo:
+    # construct the path to the object
     path = repo_file(repo, "objects", sha[0:2], sha[2:], mkdir=True)
 
+    # check if the file exists or not
     if not os.path.exists(path):
       with open(path, 'wb') as f:
+        # write the compressed data to the file
         f.write(zlib.compress(result))
   
+  # return the sha1 hash of the object
   return sha
 
+#  git blob object
 class GitBlob(GitObject):
+  # set fmt to blob
   fmt=b'blob'
 
+  # serialize the object by returning the blobdata
   def serialize(self):
     return self.blobdata
   
+  # deserialize the object by setting the blobdata to the data
   def deserialize(self, data):
     self.blobdata = data
 
+# catfile command in the cmdline
 argsp = argsubparsers.add_parser("cat-file", help="Help provide the details about the contents")
 
+# add the arguments to the cmd of object type and the object itself to display
 argsp.add_argument("type",
                    metavar="type",
                    choices=["blob","commit","tag","tree"],
