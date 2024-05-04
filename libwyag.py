@@ -303,19 +303,24 @@ argsp.add_argument("object",
                    metavar="object",
                    help="object to display")
 
+# wrapper for the catfile command
 def cmd_cat_file(args):
   repo = repo_find()
   cat_file(repo, args.object, fmt=args.type.encode())
 
+# function to display the contents of the object
 def cat_file(repo, object, fmt=None):
   obj = object_read(repo, object_find(repo, obj, fmt=fmt))
   sys.stdout.buffer.write(obj.serialize())
 
+# function to find the object
 def object_find(repo, name, fmt=None, follow=True):
   return name
 
+# hash-object command in the cmdline
 argsp = argsubparsers.add_parser("hash-object", help="Compute object ID and optionally creates a blob from file")
 
+# add the arguments to the cmd of type and write
 argsp.add_argument("-t",
                    metavar="type",
                    choices=["blob","commit","tag","tree"],
@@ -327,21 +332,28 @@ argsp.add_argument("-w",
                    action="store_true",
                    help="Actually write the object into the database")
 
+# add path argument
 argsp.add_argument("path", help="Read object from <file>")
 
+# wrapper for the hash-object command
 def cmd_hash_object(args):
+  # find the repo
   if args.write:
     repo = repo_find()
   else: 
     repo = None
 
+  # open the file in read binary mode and compute the sha1 hash of the object and print it
   with open(args.path, "rb") as fd:
     sha = object_hash(fd, args.type.encode(), repo)
     print(sha)
 
+# function to hash the object
 def object_hash(fd, fmt, repo=None):
+  # read the data from the file
   data = fd.read()
 
+  # match the object type
   match fmt:
     case b'commit' : obj=GitCommit(data)
     case b'tree'   : obj=GitTree(data)
@@ -349,31 +361,38 @@ def object_hash(fd, fmt, repo=None):
     case b'blob'   : obj=GitBlob(data)
     case _: raise Exception("Unknown type %s!" % fmt)
   
+  # if repo is provided then write the object to the repo
   return object_write(obj, repo)
 
+# function for key value list mapping
 def kvlm_parse(raw, start=0, dct=None):
+  # if the dictionary is not provided then create an ordered dictionary
   if not dct:
     dct = collections.OrderedDict()
 
-
+  # find the first space and newline in the raw data
   spc = raw.find(b' ', start)
   nl = raw.find(b'\n', start)
 
-
+  # if no space is found or newline is found before space then add the data to the dictionary
   if(spc < 0) or (nl < spc):
-    assert nl == start
-    dct[None] = raw[start+1:]
-    return dct
+    assert nl == start            # newline is at the start
+    dct[None] = raw[start+1:]     # add the data to the dictionary starting from the next character from newline
+    return dct 
   
+  # get the key starting from the start to the space
   key = raw[start:spc]
-  end = start
+  end = start     # set the end to start  
 
+  # loop to process the key value pair
   while True:
+    # find the next newline character
     end = raw.find(b'\n', end+1)
-    if raw[end+1] != ord(' '): break
+    if raw[end+1] != ord(' '): break # if the next character is not a space then break the loop and process the key value pair
 
-  value = raw[spc+1:end].replace(b'\n ',b'\n')
+  value = raw[spc+1:end].replace(b'\n ',b'\n') # get the value by replacing the newline and space with newline  
 
+  # if the key is already present in the dictionary then append the value to the key
   if key in dct:
     if type(dct[key] == list):
       dct[key].append(value)
@@ -382,20 +401,25 @@ def kvlm_parse(raw, start=0, dct=None):
   else:
     dct[key] = value
 
+  # recursive call to parse the raw data
   return kvlm_parse(raw, start=end+1, dct=dct)
 
+# function to serialize the key value list mapping
 def kvlm_serialize(kvlm):
-  ret = b''
+  ret = b''   # initialize the return value to empty byte string
 
+  # loop through the key value list mapping
   for k in kvlm.keys():
-    if k == None: continue
-    val = kvlm[k]
-    if type(val) != list:
+    if k == None: continue   # if the key is none then continue
+    val = kvlm[k]            # get the value of the key
+    if type(val) != list:    # checks if the value is a list or not if not then convert it to a list
       val = [ val ]
 
+    # loop through the values
     for v in val:
-      ret += k + b' ' + (v.replace(b'\n', b'\n ')) + b'\n'
+      ret += k + b' ' + (v.replace(b'\n', b'\n ')) + b'\n'  # append the key value pair to the return value in the format key value newline
 
+  # appends any data under the none key
   ret += b'\n' + kvlm[None] + b'\n'
-
+  
   return ret 
