@@ -369,6 +369,7 @@ def kvlm_parse(raw, start=0, dct=None):
   # if the dictionary is not provided then create an ordered dictionary
   if not dct:
     dct = collections.OrderedDict()
+  # have to declare it attached to the function othrewise all other operations will be done on the same dictionary
 
   # find the first space and newline in the raw data
   spc = raw.find(b' ', start)
@@ -423,3 +424,86 @@ def kvlm_serialize(kvlm):
   ret += b'\n' + kvlm[None] + b'\n'
   
   return ret 
+
+class GitCommit(GitObject):
+  # put the format
+  fmt =b'commit'
+
+  # deserialize the object
+  def deserialize(self, data):
+    self.kvlm = kvlm_parse(data)
+  
+  # serialize the object  
+  def serialize(self, repo):
+    return kvlm_serialize(self.kvlm)
+  
+  # constructor function
+  def init(self):
+    self.kvlm = dict()
+
+# log command in the cmdline
+argsp = argsubparsers.add_parser("log", help="Display history of a given commit")
+
+argsp.add_argument("commit",
+                    default="HEAD",
+                    nargs="?",
+                    help="Commit to start at")
+
+def cmd_log(args):
+  repo = repo_find()
+
+  # print the graphviz of the log
+  print("digraph wyaglog{")
+  print("  node[shape=rect]")
+  # pass the repo, sha1 hash and a set to keep the record of visited commits
+  log_graphviz(repo, object_find(repo, args.commit), set())
+  print("}")
+
+def log_graphviz(repo, sha, seen):
+
+  # check if the commit has been visited already
+  if sha in seen:
+    return
+  
+  # add the commit to the seen set
+  seen.add(sha)
+
+  # get commit object
+  commit = object_read(repo, sha)
+
+  # short version of hash for display purposes
+  short_hash = sha[0:8]
+
+  # get the commit message from the commit object ans remove any spaces or newlines
+  message = commit.kvlm[None].decode("utf8").strip()
+
+  # escape the backslashes and double quotes
+  message = message.replace("\\", "\\\\")
+  message = message.replace("\"", "\\\"")
+
+  # only take the first line of the message
+  if("\n" in message):
+    message = message[:message.find("\n")]
+    
+  # print the commit node with its short hash and message
+  print(" c_{0} [label=\"{1}: {2}\"]".format(sha, sha[0:7], message))
+  
+  # check the format of the commit object for correctness
+  assert commit.fmt == b'commit'
+
+  # check for parent
+  if not b'parent' in commit.kvlm.keys():
+    return
+  
+  # retrieve the parent commit
+  parents = commit.kvlm[b'parent']
+
+  # check if the parent is a list or not
+  if type(parents) != list:
+    parents = [ parents ]
+
+  # for each parent commit call the log_graphviz function
+  for p in parents:
+    p = p.decode("ascii")
+    print("  c_{0} -> c_{1};".format(sha, p))
+    log_graphviz(repo, p, seen)
