@@ -3,3 +3,5 @@
 import libwyag
 libwyag.main()
 
+# If the command does not work globally use this command to enable it globally
+#sudo ln -s /path/to/the/script/wyag /usr/local/bin/wyag
