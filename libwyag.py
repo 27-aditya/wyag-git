@@ -507,3 +507,175 @@ def log_graphviz(repo, sha, seen):
     p = p.decode("ascii")
     print("  c_{0} -> c_{1};".format(sha, p))
     log_graphviz(repo, p, seen)
+
+# Git tree leaf -> leaf contains the hash, mode and path
+class GitTreeLeaf(self, mode, path, sha):
+    def __init__(self, mode, path, sha):
+      self.mode = mode
+      self.path = path
+      self.sha = sha
+
+def tree_parse_one(raw, start=0):
+  # find the space to get the mode
+  x = raw.find(b' ',start)
+  assert x-start == 5 or x-start == 6
+
+  # got the mode
+  mode = raw[start:x]
+  
+  # generalize to length 6 
+  if len(raw) == 5:
+    mode = b" " + mode
+
+  # find the null byte to get the path
+  y = raw.find(b'\x00', x)
+
+  path = raw[x+1:y]
+
+  # get the hash
+  sha = format(int.from_bytes(raw[y+1:y+21], "big"), "040x")
+  return y+21, GitTreeLeaf(mode, path.decode("utf8"), sha)
+
+# wrapper for the parse which calls it in a loop
+def tree_parse(raw):
+  pos = 0
+  max = len(raw)
+  ret = list()
+
+  while pos < max:
+    pos, data = tree_parse_one(raw, pos)
+    ret.append(data)
+
+  return ret
+
+# function to check for any same directories with different hashes and convert them into one
+def tree_leaf_sort_key(leaf):
+  # 10 is vale used to identify directories in unix based systems
+  if leaf.mode.startswith(b"10"):
+    return leaf.path
+  else:
+    return leaf.path + "/"
+  
+# function to serialize a tree object with leaves
+def tree_serialize(obj):
+  obj.items.sort(key=tree_leaf_sort_key)
+  ret = b''
+
+  # make the tuple containing the mode, path and sha
+  for i in obj.items:
+    ret += i.mode
+    ret += b' '
+    ret += i.path.endcode("utf8")
+    sha = int(i.sha, 16)
+    ret += sha.to_bytes(20, byteorder="big")
+  
+  return ret
+
+# Git tree object    
+class GitTree(GitObject):
+  fmt = b'tree'
+
+  def deserialize(self, data):
+    self.items = tree_parse(data)
+
+  def serialize(self):
+    return tree_serialize(self)
+  
+  def init(self):
+    self.items = list()
+
+# ls-tree command
+argsp = argsubparsers.add_parser("ls-tree", help="Noice print a tree object.")
+
+argsp.add_argument("-r",
+                   dest="recursive",
+                   action="store_true",
+                   help="Recurse into sub-trees.")
+
+argsp.add_argument("tree",
+                   help="The tree object to show.")
+
+# wrapper for the ls-tree command
+def cmd_ls_tree(args):
+  repo = repo_find()
+  ls_tree(repo, args.tree, args.recursive)
+
+#
+def ls_tree(repo, ref, recrusive=None, prefix=""):
+  # get the hash
+  sha = object_find(repo, ref, fmt=b'tree')
+  # get the object list
+  obj = object_read(repo, sha)
+
+  # loop through the object list
+  for item in obj.mode:
+    # get the type of the object
+    if len(item) == 6:
+      type = item[0:2]
+    else:
+      type = item[0:1]
+
+    # match the type
+    match type:
+      case b'10': type = "blob"
+      case b'04': type = "tree"
+      case b'12': type = "blob"
+      case b'16': type = "commit"
+      case _: raise Exception("Unknown type {}".format(item.mode))
+
+    # print the object recursively
+    if not (recursive and type == "tree"):
+      print("{0} {1} {2}\t{3}".format(
+        "0" * (6 - len(item.mode)) + item.mode.decode("ascii"),
+        type,
+        item.sha,
+        os.path.join(prefix, item.path)))
+    else:
+       ls_tree(repo, item.sha, recursive, os.path.join(prefix, item.path))
+
+# checkout cmd
+argsp = argsubparsers.add_parser("checkout", help="checkout a commit inside of a directory.")
+
+argsp.add_argument("commit",
+                   help="The commit or tree to checkout.")
+
+argsp.add_argument("path",
+                   help="The EMPTY directory to checkout on.")
+
+# wrapper for the checkout command
+def cmd_checkout(args):
+  # find the repo
+  repo = repo_find()
+  
+  # get the object
+  obj = object_read(repo, object_find(repo, args.commit))
+
+  # if the object is a commit then get the tree object
+  if obj.fmt == b'commit':
+    obj = object_read(repo, obj.kvlm[b'tree'].decode("ascii"))
+
+  # check if the path exists or not and there is an empty dir present
+  if os.path.exists(args.path):
+    if not os.path.isdir(args.path):
+      raise Exception("Not a directory {}".format(args.path))
+    if os.listdir(args.path):
+      raise Exception("Not an empty directory {}".format(args.path))
+  else:
+    os.makedirs(args.path)
+  
+  # call the ls tree function
+  ls_tree(repo, obj, os.path.realpath(args.path))
+
+def ls_tree(repo, tree, path):
+  for item in tree.items:
+    obj = object_read(repo, item.sha)
+    dest = os.path.join(path, item.path)
+
+    if obj.fmt == b'tree':
+      os.makedirs(dest)
+      ls_tree(repo, obj, path)
+    elif obj.fmt == b'blob':
+      with open(dest, "wb") as f:
+        f.write(obj.blobdata)
+
+
