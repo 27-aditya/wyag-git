@@ -510,10 +510,10 @@ def log_graphviz(repo, sha, seen):
 
 # Git tree leaf -> leaf contains the hash, mode and path
 class GitTreeLeaf(self, mode, path, sha):
-    def __init__(self, mode, path, sha):
-      self.mode = mode
-      self.path = path
-      self.sha = sha
+  def __init__(self, mode, path, sha):
+    self.mode = mode
+    self.path = path
+    self.sha = sha
 
 def tree_parse_one(raw, start=0):
   # find the space to get the mode
@@ -600,8 +600,8 @@ def cmd_ls_tree(args):
   repo = repo_find()
   ls_tree(repo, args.tree, args.recursive)
 
-#
-def ls_tree(repo, ref, recrusive=None, prefix=""):
+
+def ls_tree(repo, ref, recursive=None, prefix=""):
   # get the hash
   sha = object_find(repo, ref, fmt=b'tree')
   # get the object list
@@ -677,5 +677,53 @@ def ls_tree(repo, tree, path):
     elif obj.fmt == b'blob':
       with open(dest, "wb") as f:
         f.write(obj.blobdata)
+
+# resolve the ref
+def ref_resolve(repo, ref):
+  path = repo_path(repo, ref) # get the path
+
+  # there may be no commit yet and hence no ref
+  if not os.path.isfile(path):
+    return None
+
+  with open(path, 'r') as fp:
+    data = fp.read()[:-1] # remove the newline
+  
+  if data.startswith("ref: "):
+    return ref_resolve(repo, data[5:])
+  else:
+    return data
+
+# the references are stored in sorted order by git
+def ref_list(repo, path=None):
+  if not path:
+    path = repo_dir(repo, "refs")
+  ret = collections.OrderedDict() #dict to store the references
+
+  for f in sorted(os.listdir(path)):
+    can = os.path.join(path, f)
+    if os.psth.isdir(can):
+      ret[f] = ref_list(repo, can)
+    else:
+      ref[f] = ref_resolve(repo, can)
+
+  return ret
+
+argsp = argsubparsers.add_parser("show-ref", help="List references.")
+
+def cmd_show_ref(args):
+  repo = repo_find()
+  refs = ref_list(repo)
+  show_ref(repo, refs,with_hash=true, prefix="")
+
+def show_ref(repo, refs, with_hash=True, prefix=""):  
+  for k, v in refs.items():
+    if(type(v) == str):
+      print ("{0}{1}{2}".format(
+              v + " " if with_hash else "",
+              prefix + "/" if prefix else "",
+              k))
+    else:
+      show_ref(repo, v, with_hash=with_hash, prefix="{0}{1}{2}".format(prefix, "/" if prefix else "", k))
 
 
