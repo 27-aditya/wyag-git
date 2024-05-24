@@ -820,14 +820,18 @@ def object_find(repo, name, fmt=None, follow=True):
   if not sha:
     raise Exception("No such reference {0}.".format(name))
 
+  # if multiple refernces are sent by object resolve then it might be ambiguous
   if len(sha) > 1:
     raise Exception("Ambiguous reference {0}: Candidates are:\n - {1}.".format(name,  "\n - ".join(sha)))
 
+  # get the sha hash
   sha = sha[0]
 
+  # if format not specified then return 
   if not fmt:
     return sha
 
+  # read the object and check the format by accessing the kvlm
   while True:
     obj = object_read(repo, sha)
 
@@ -845,9 +849,7 @@ def object_find(repo, name, fmt=None, follow=True):
     else:
       return None
 
-    argsp = argsubparsers.add_parser(
-    "rev-parse",
-    help="Parse revision (or other objects) identifiers")
+argsp = argsubparsers.add_parser("rev-parse", help="Parse revision (or other objects) identifiers")
 
 argsp.add_argument("--wyag-type",
                    metavar="type",
@@ -856,8 +858,7 @@ argsp.add_argument("--wyag-type",
                    default=None,
                    help="Specify the expected type")
 
-argsp.add_argument("name",
-                   help="The name to parse")
+argsp.add_argument("name", help="The name to parse")
 
 def cmd_rev_parse(args):
   if args.type:
@@ -868,3 +869,20 @@ def cmd_rev_parse(args):
   repo = repo_find()
 
   print (object_find(repo, args.name, fmt, follow=True))
+
+class GitIndexEntry(object):
+  def __init__(self, ctime=None, mtime=None, dev=None, ino=None, mode_type=None, uid=None, gid=None, fsize=None, sha=None, flag_assume_valid=None, flag_stage=None, name=None):
+    self.ctime = ctime # creation time in seconds and nanoseconds
+    self.mtime = mtime  # modification time in seconds and nanoseconds
+    self.dev = dev # device number
+    self.ino = ino # inode number
+    self.mode = mode  # mode of the file
+    self.uid = uid # user id
+    self.gid = gid # user's group id
+    self.size = fsize # file size
+    self.sha = sha  # hash
+    self.flag_assume_valid = flag_assume_valid # assume file is valid 
+    self.flag_stage = flag_stage  # stage of the file
+    self.name = name  # name of the file
+
+
